@@ -11,6 +11,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -27,16 +28,20 @@ public class LoadTestService {
     private final AtomicLong sentCount = new AtomicLong();
     private final AtomicLong sentBytes = new AtomicLong();
     private final Instant start = Instant.now();
+    private Instant startTime;
 
 
     @Value("${mqtt.topic}")
     private String mqttTopic;
 
-    @Value("${load.test.messages-per-batch:1000}")
+    @Value("${load.test.messages-per-batch}")
     private int messagesPerBatch;
 
-    @Value("${load.test.batch-interval:200}")
+    @Value("${load.test.batch-interval}")
     private long batchInterval;
+
+    @Value("${load.test.duration-seconds}")
+    private long durationSeconds;
 
     private List<String> preGenerated;
 
@@ -63,6 +68,17 @@ public class LoadTestService {
 
     @Scheduled(fixedRateString = "${load.test.batch-interval:200}")
     public void sendBatch() {
+        if (startTime == null) {
+            startTime = Instant.now();
+            System.out.println("[LoadTest] Starting load test: duration=" + durationSeconds + "s, batchSize=" + messagesPerBatch);
+        }
+
+        long elapsed = Duration.between(startTime, Instant.now()).getSeconds();
+        if (elapsed >= durationSeconds) {
+            System.out.println("[LoadTest] Finished load test: elapsed=" + elapsed + "s, totalSent=" + sentCount.get());
+            return;
+        }
+        long batchStart = System.currentTimeMillis();
         for (String payload : preGenerated) {
             Message<String> msg = MessageBuilder
                     .withPayload(payload)
@@ -72,8 +88,9 @@ public class LoadTestService {
             sentCount.incrementAndGet();
             sentBytes.addAndGet(payload.getBytes(StandardCharsets.UTF_8).length);
         }
+        long schedulingTime = System.currentTimeMillis() - batchStart;
         System.out.println("[LoadTest] Sent batch of " + messagesPerBatch
-                + " messages (total=" + sentCount.get() + ")");
+                + " messages, schedulingTime=" + schedulingTime + "ms, totalSent=" + sentCount.get());
     }
 
     public long getSentCount() {

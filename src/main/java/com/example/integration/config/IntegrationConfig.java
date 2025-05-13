@@ -103,12 +103,13 @@ public class IntegrationConfig {
     @Bean
     public MqttPahoClientFactory mqttClientFactory() {
         DefaultMqttPahoClientFactory factory = new DefaultMqttPahoClientFactory();
-        MqttConnectOptions opts = new MqttConnectOptions();
-        opts.setServerURIs(new String[]{mqttBrokerUrl});  // 브로커 주소
-        opts.setCleanSession(false);  // 세션 유지
-        opts.setAutomaticReconnect(true);  // 자동 재연결
-        opts.setConnectionTimeout(30);  // 연결 타임아웃
-        factory.setConnectionOptions(opts);
+        MqttConnectOptions options = new MqttConnectOptions();
+        options.setServerURIs(new String[]{mqttBrokerUrl});  // 브로커 주소
+        options.setCleanSession(false);  // 세션 유지
+        options.setAutomaticReconnect(true);  // 자동 재연결
+        options.setConnectionTimeout(60);  // 연결 타임아웃
+        options.setKeepAliveInterval(120);
+        factory.setConnectionOptions(options);
         return factory;
     }
 
@@ -128,18 +129,21 @@ public class IntegrationConfig {
             MqttPahoClientFactory clientFactory,
             MqttToKafkaService mqttToKafkaService
     ) {
+        DefaultPahoMessageConverter converter = new DefaultPahoMessageConverter();
+        converter.setPayloadAsBytes(true);
+
         MqttPahoMessageDrivenChannelAdapter adapter =
                 new MqttPahoMessageDrivenChannelAdapter(
                         mqttClientId + "-inbound", clientFactory, mqttTopic
                 );
         adapter.setConverter(new DefaultPahoMessageConverter());  // 페이로드 변환
         adapter.setQos(mqttQos);  // QoS 설정
+        adapter.setCompletionTimeout(60000);
 
         return IntegrationFlow.from(adapter)
+                // 2. 람다의 payload 타입을 byte[] 로 명시
                 .handle(byte[].class, (payload, headers) -> {
-                    // 1) 메트릭 집계
                     mqttToKafkaService.onMqttReceived(payload.length);
-                    // 2) String 변환 후 Kafka 전송(내부에서 메트릭도 집계)
                     mqttToKafkaService.handleFromRabbit(payload);
                     return null;
                 })
