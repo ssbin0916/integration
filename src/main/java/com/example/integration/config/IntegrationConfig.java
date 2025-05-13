@@ -1,6 +1,8 @@
 package com.example.integration.config;
 
+import com.example.integration.service.MqttToKafkaService;
 import org.eclipse.paho.client.mqttv3.MqttConnectOptions;
+import org.springframework.amqp.core.AcknowledgeMode;
 import org.springframework.amqp.rabbit.connection.ConnectionFactory;
 import org.springframework.amqp.rabbit.listener.SimpleMessageListenerContainer;
 import org.springframework.beans.factory.annotation.Value;
@@ -124,7 +126,7 @@ public class IntegrationConfig {
     @Bean
     public IntegrationFlow mqttInboundFlow(
             MqttPahoClientFactory clientFactory,
-            KafkaTemplate<String, String> kafkaTemplate
+            MqttToKafkaService mqttToKafkaService
     ) {
         MqttPahoMessageDrivenChannelAdapter adapter =
                 new MqttPahoMessageDrivenChannelAdapter(
@@ -134,9 +136,13 @@ public class IntegrationConfig {
         adapter.setQos(mqttQos);  // QoS 설정
 
         return IntegrationFlow.from(adapter)
-                .channel(mqttInputChannel())
-                .handle(Kafka.outboundChannelAdapter(kafkaTemplate)
-                        .topic(kafkaTopic))  // Kafka 전송
+                .handle(byte[].class, (payload, headers) -> {
+                    // 1) 메트릭 집계
+                    mqttToKafkaService.onMqttReceived(payload.length);
+                    // 2) String 변환 후 Kafka 전송(내부에서 메트릭도 집계)
+                    mqttToKafkaService.handleFromRabbit(payload);
+                    return null;
+                })
                 .get();
     }
 
@@ -159,21 +165,25 @@ public class IntegrationConfig {
     @Bean
     public IntegrationFlow rabbitToKafkaFlow(
             ConnectionFactory connectionFactory,
-            KafkaTemplate<String, String> kafkaTemplate
+            KafkaTemplate<String, String> kafkaTemplate,
+            MqttToKafkaService mqttToKafkaService
     ) {
         SimpleMessageListenerContainer container =
                 new SimpleMessageListenerContainer(connectionFactory);
         container.setQueueNames(rabbitQueue);  // 큐 이름
         container.setConcurrentConsumers(8);  // 동시 소비 스레드 수
         container.setPrefetchCount(1000);  // prefetch 수
+        container.setAcknowledgeMode(AcknowledgeMode.AUTO);
 
         AmqpInboundChannelAdapter adapter = new AmqpInboundChannelAdapter(container);
         adapter.setOutputChannel(rabbitInputChannel());  // 채널 연결
 
         return IntegrationFlow.from(adapter)
-                .transform((byte[] p) -> new String(p, StandardCharsets.UTF_8))  // byte[] → String
-                .handle(Kafka.outboundChannelAdapter(kafkaTemplate)
-                        .topic(kafkaTopic))  // Kafka 전송
+                .handle(byte[].class, (body, headers) -> {
+                    mqttToKafkaService.onRabbitReceived(body.length);
+                    mqttToKafkaService.handleFromRabbit(body);
+                    return null;
+                })
                 .get();
     }
 }

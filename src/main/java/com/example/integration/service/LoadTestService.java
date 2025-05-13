@@ -11,6 +11,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
@@ -25,6 +26,7 @@ public class LoadTestService {
     private final Random random = new Random();
     private final AtomicLong sentCount = new AtomicLong();
     private final AtomicLong sentBytes = new AtomicLong();
+    private final Instant start = Instant.now();
 
 
     @Value("${mqtt.topic}")
@@ -74,19 +76,16 @@ public class LoadTestService {
                 + " messages (total=" + sentCount.get() + ")");
     }
 
-    public long getSentBytes() {
-        return sentBytes.get(); // 추가
-    }
-
-    public int getMessagesPerBatch() {
-        return messagesPerBatch; // 추가
-    }
-
-    public void reset() {
-        sentCount.set(0);
-    }
-
     public long getSentCount() {
         return sentCount.get();
+    }
+
+    public long getSentBytes() {
+        return sentBytes.get();
+    }
+
+    public double getSendRatePerSec() {
+        double secs = (Instant.now().toEpochMilli() - start.toEpochMilli()) / 1_000.0;
+        return secs > 0 ? sentCount.get() / secs : 0;
     }
 }
