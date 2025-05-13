@@ -46,7 +46,7 @@ load:
     enabled: false                      # \uB85C\uB4DC\uD14C\uC2A4\uD2B8 \uBAA8\uB4DC on/off
     messages-per-batch: 1000            # \uBC30\uCE58\uB2F9 \uBA54\uC2DC\uC9C0 \uC218
     batch-interval: 200                 # \uBC30\uCE58 \uC804\uC1A1 \uAC04\uACA9(ms)
-    duration-seconds: 60                # \uD14C\uC2A4\uD2B8 \uCD1D \uC9C0\uC18D \uC2DC\uAC04(\uCD08)
+    duration-seconds: 600                # \uD14C\uC2A4\uD2B8 \uCD1D \uC9C0\uC18D \uC2DC\uAC04(\uCD08)
 
 mqtt:
   broker-url: tcp://localhost:1883     # MQTT \uBE0C\uB85C\uCEE4 \uC811\uC18D URL

@@ -105,10 +105,10 @@ public class IntegrationConfig {
         DefaultMqttPahoClientFactory factory = new DefaultMqttPahoClientFactory();
         MqttConnectOptions options = new MqttConnectOptions();
         options.setServerURIs(new String[]{mqttBrokerUrl});  // 브로커 주소
-        options.setCleanSession(false);  // 세션 유지
+        options.setCleanSession(true);  // 세션 유지
         options.setAutomaticReconnect(true);  // 자동 재연결
         options.setConnectionTimeout(60);  // 연결 타임아웃
-        options.setKeepAliveInterval(120);
+        options.setKeepAliveInterval(60);
         factory.setConnectionOptions(options);
         return factory;
     }
@@ -142,9 +142,9 @@ public class IntegrationConfig {
 
         return IntegrationFlow.from(adapter)
                 // 2. 람다의 payload 타입을 byte[] 로 명시
-                .handle(byte[].class, (payload, headers) -> {
-                    mqttToKafkaService.onMqttReceived(payload.length);
-                    mqttToKafkaService.handleFromRabbit(payload);
+                .<String>handle((payload, headers) -> {
+                    mqttToKafkaService.onMqttReceived(payload.getBytes(StandardCharsets.UTF_8).length);
+//                    mqttToKafkaService.handleFromMqtt(payload);
                     return null;
                 })
                 .get();

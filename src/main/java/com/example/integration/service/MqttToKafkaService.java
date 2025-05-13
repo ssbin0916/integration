@@ -18,36 +18,65 @@ public class MqttToKafkaService {
     @Value("${spring.kafka.topic}")
     private String kafkaTopic;
 
-    // metrics
+    // ========== 메트릭 변수 ==========
     private final AtomicLong mqttReceivedCount = new AtomicLong();
     private final AtomicLong mqttReceivedBytes = new AtomicLong();
     private final AtomicLong rabbitReceivedCount = new AtomicLong();
     private final AtomicLong rabbitReceivedBytes = new AtomicLong();
     private final AtomicLong kafkaSentCount = new AtomicLong();
     private final AtomicLong kafkaSentBytes = new AtomicLong();
+
+    // 테스트 시작 시각
     private final Instant start = Instant.now();
 
-    // MQTT → Kafka flow
+    // ================================
+    // 1) MQTT → Kafka 흐름
+    // ================================
+
+    /**
+     * MQTT 메시지 수신 시 메트릭 집계만
+     */
     public void onMqttReceived(int byteLen) {
         mqttReceivedCount.incrementAndGet();
         mqttReceivedBytes.addAndGet(byteLen);
     }
 
-    // RabbitMQ → Kafka flow
+    /**
+     * MQTT에서 수신한 문자열 페이로드를 Kafka로 전송
+     */
+    public void handleFromMqtt(String payload) {
+        // Kafka 전송
+        kafkaTemplate.send(kafkaTopic, payload);
+        // 메트릭 집계
+        kafkaSentCount.incrementAndGet();
+        kafkaSentBytes.addAndGet(payload.getBytes(StandardCharsets.UTF_8).length);
+    }
+
+    // ================================
+    // 2) RabbitMQ → Kafka 흐름
+    // ================================
+
+    /**
+     * Rabbit 메시지 수신 시 메트릭 집계만
+     */
     public void onRabbitReceived(int byteLen) {
         rabbitReceivedCount.incrementAndGet();
         rabbitReceivedBytes.addAndGet(byteLen);
     }
 
-    // 실제 Kafka 전송
+    /**
+     * RabbitMQ에서 수신한 raw byte[] 페이로드를 Kafka로 전송
+     */
     public void handleFromRabbit(byte[] body) {
         String payload = new String(body, StandardCharsets.UTF_8);
+        // Kafka 전송
         kafkaTemplate.send(kafkaTopic, payload);
+        // 메트릭 집계
         kafkaSentCount.incrementAndGet();
         kafkaSentBytes.addAndGet(payload.getBytes(StandardCharsets.UTF_8).length);
     }
 
-    // getters
+    // ========== Getter: MQTT ==========
     public long getMqttReceivedCount() {
         return mqttReceivedCount.get();
     }
@@ -57,10 +86,11 @@ public class MqttToKafkaService {
     }
 
     public double getMqttReceiveRatePerSec() {
-        double s = (Instant.now().toEpochMilli() - start.toEpochMilli()) / 1_000.0;
-        return s > 0 ? mqttReceivedCount.get() / s : 0;
+        double secs = (Instant.now().toEpochMilli() - start.toEpochMilli()) / 1_000.0;
+        return secs > 0 ? mqttReceivedCount.get() / secs : 0;
     }
 
+    // ========== Getter: RabbitMQ =======
     public long getRabbitReceivedCount() {
         return rabbitReceivedCount.get();
     }
@@ -70,10 +100,11 @@ public class MqttToKafkaService {
     }
 
     public double getRabbitReceiveRatePerSec() {
-        double s = (Instant.now().toEpochMilli() - start.toEpochMilli()) / 1_000.0;
-        return s > 0 ? rabbitReceivedCount.get() / s : 0;
+        double secs = (Instant.now().toEpochMilli() - start.toEpochMilli()) / 1_000.0;
+        return secs > 0 ? rabbitReceivedCount.get() / secs : 0;
     }
 
+    // ========== Getter: Kafka ==========
     public long getKafkaSentCount() {
         return kafkaSentCount.get();
     }
@@ -83,7 +114,7 @@ public class MqttToKafkaService {
     }
 
     public double getKafkaSendRatePerSec() {
-        double s = (Instant.now().toEpochMilli() - start.toEpochMilli()) / 1_000.0;
-        return s > 0 ? kafkaSentCount.get() / s : 0;
+        double secs = (Instant.now().toEpochMilli() - start.toEpochMilli()) / 1_000.0;
+        return secs > 0 ? kafkaSentCount.get() / secs : 0;
     }
 }
