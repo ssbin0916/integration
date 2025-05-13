@@ -124,31 +124,31 @@ public class IntegrationConfig {
     /**
      * MQTT 토픽을 구독하고, 수신된 메시지를 Kafka로 전송하는 Flow
      */
-    @Bean
-    public IntegrationFlow mqttInboundFlow(
-            MqttPahoClientFactory clientFactory,
-            MqttToKafkaService mqttToKafkaService
-    ) {
-        DefaultPahoMessageConverter converter = new DefaultPahoMessageConverter();
-        converter.setPayloadAsBytes(true);
-
-        MqttPahoMessageDrivenChannelAdapter adapter =
-                new MqttPahoMessageDrivenChannelAdapter(
-                        mqttClientId + "-inbound", clientFactory, mqttTopic
-                );
-        adapter.setConverter(new DefaultPahoMessageConverter());  // 페이로드 변환
-        adapter.setQos(mqttQos);  // QoS 설정
-        adapter.setCompletionTimeout(60000);
-
-        return IntegrationFlow.from(adapter)
-                // 2. 람다의 payload 타입을 byte[] 로 명시
-                .<String>handle((payload, headers) -> {
-                    mqttToKafkaService.onMqttReceived(payload.getBytes(StandardCharsets.UTF_8).length);
-//                    mqttToKafkaService.handleFromMqtt(payload);
-                    return null;
-                })
-                .get();
-    }
+//    @Bean
+//    public IntegrationFlow mqttInboundFlow(
+//            MqttPahoClientFactory clientFactory,
+//            MqttToKafkaService mqttToKafkaService
+//    ) {
+//        DefaultPahoMessageConverter converter = new DefaultPahoMessageConverter();
+//        converter.setPayloadAsBytes(true);
+//
+//        MqttPahoMessageDrivenChannelAdapter adapter =
+//                new MqttPahoMessageDrivenChannelAdapter(
+//                        mqttClientId + "-inbound", clientFactory, mqttTopic
+//                );
+//        adapter.setConverter(new DefaultPahoMessageConverter());  // 페이로드 변환
+//        adapter.setQos(mqttQos);  // QoS 설정
+//        adapter.setCompletionTimeout(60000);
+//
+//        return IntegrationFlow.from(adapter)
+//                // 2. 람다의 payload 타입을 byte[] 로 명시
+//                .<String>handle((payload, headers) -> {
+//                    mqttToKafkaService.onMqttReceived(payload.getBytes(StandardCharsets.UTF_8).length);
+////                    mqttToKafkaService.handleFromMqtt(payload);
+//                    return null;
+//                })
+//                .get();
+//    }
 
     // =====================================
     // 3. RabbitMQ 구독(Subscribe) 후 Kafka 전송
