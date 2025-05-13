@@ -1,0 +1,56 @@
+# \u250C\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510
+# \u2502                          application.yml                                 \u2502
+# \u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518
+
+spring:
+  cassandra:
+    contact-points: 127.0.0.1
+    port: 9042
+    keyspace-name: my_keyspace
+    schema-action: none
+    local-datacenter: datacenter1
+
+  rabbitmq:
+    host: localhost           # RabbitMQ \uBE0C\uB85C\uCEE4 \uD638\uC2A4\uD2B8
+    port: 5672                # RabbitMQ \uBE0C\uB85C\uCEE4 \uD3EC\uD2B8
+    username: guest           # \uC778\uC99D \uC0AC\uC6A9\uC790 \uC774\uB984
+    password: guest           # \uC778\uC99D \uBE44\uBC00\uBC88\uD638
+    exchange: amq.topic       # \uC0AC\uC6A9\uD560 Exchange \uC774\uB984
+    routing-key: test.#       # \uBC14\uC778\uB529\uD560 \uB77C\uC6B0\uD305 \uD0A4 \uD328\uD134
+    queue: test               # \uC18C\uBE44\uD560 Queue \uC774\uB984
+
+  kafka:
+    bootstrap-servers: localhost:9092   # Kafka \uD074\uB7EC\uC2A4\uD130 \uC8FC\uC18C
+    topic: kafka-test-topic             # \uAE30\uBCF8 \uD504\uB85C\uB4C0\uC2F1/\uCEE8\uC288\uBC0D \uD1A0\uD53D
+    consumer:
+      group-id: kafka-group             # \uCEE8\uC288\uBA38 \uADF8\uB8F9 ID
+      auto-offset-reset: earliest       # Offset \uC5C6\uC744 \uB54C \uCC98\uC74C\uBD80\uD130 \uC77D\uAE30
+#      enable-auto-commit: true         # (\uBE44\uD65C\uC131) \uC790\uB3D9 \uCEE4\uBC0B \uC0AC\uC6A9 \uC5EC\uBD80
+#      auto-commit-interval: 100       # (\uBE44\uD65C\uC131) \uC790\uB3D9 \uCEE4\uBC0B \uC8FC\uAE30(ms)
+
+server:
+  port: 8080                            # Spring Boot \uB0B4\uC7A5 \uD1B0\uCEA3 \uD3EC\uD2B8
+  jackson:
+    date-format: yyyy-MM-dd'T'HH:mm:ss  # JSON \uC9C1\uB82C\uD654 \uC2DC \uB0A0\uC9DC \uD615\uC2DD
+    time-zone: Asia/Seoul               # Jackson \uCD9C\uB825 \uD0C0\uC784\uC874
+
+logging:
+  level:
+    root: INFO                          # \uAE30\uBCF8 \uB85C\uAE45 \uB808\uBCA8
+    org.springframework: INFO           # Spring \uD504\uB808\uC784\uC6CC\uD06C \uB85C\uAE45 \uB808\uBCA8
+    com.example.rabbitmq: DEBUG         # \uC560\uD50C\uB9AC\uCF00\uC774\uC158 \uD328\uD0A4\uC9C0 \uB85C\uAE45 \uB808\uBCA8
+    org.hibernate.SQL: DEBUG            # Hibernate SQL \uB85C\uADF8(\uCFFC\uB9AC) \uD65C\uC131\uD654
+
+load:
+  test:
+    enabled: false                      # \uB85C\uB4DC\uD14C\uC2A4\uD2B8 \uBAA8\uB4DC on/off
+    messages-per-batch: 1000            # \uBC30\uCE58\uB2F9 \uBA54\uC2DC\uC9C0 \uC218
+    batch-interval: 200                 # \uBC30\uCE58 \uC804\uC1A1 \uAC04\uACA9(ms)
+    duration-seconds: 60                # \uD14C\uC2A4\uD2B8 \uCD1D \uC9C0\uC18D \uC2DC\uAC04(\uCD08)
+
+mqtt:
+  broker-url: tcp://localhost:1883     # MQTT \uBE0C\uB85C\uCEE4 \uC811\uC18D URL
+  client-id: client                     # MQTT \uD074\uB77C\uC774\uC5B8\uD2B8 ID
+  topic: test                           # MQTT \uD37C\uBE14\uB9AC\uC2DC \uD1A0\uD53D
+  qos: 1                                # MQTT QoS \uB808\uBCA8 (0|1|2)
+  clean-session: false                  # \uC138\uC158 \uC720\uC9C0 \uC5EC\uBD80
