@@ -1,193 +1,180 @@
 package com.example.integration.config;
 
 import com.example.integration.service.MqttToKafkaService;
-import org.eclipse.paho.client.mqttv3.MqttConnectOptions;
+import com.rabbitmq.client.Channel;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.common.serialization.StringDeserializer;
 import org.springframework.amqp.core.AcknowledgeMode;
 import org.springframework.amqp.rabbit.connection.ConnectionFactory;
 import org.springframework.amqp.rabbit.listener.SimpleMessageListenerContainer;
+import org.springframework.amqp.support.AmqpHeaders;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.integration.annotation.MessagingGateway;
-import org.springframework.integration.annotation.ServiceActivator;
 import org.springframework.integration.amqp.inbound.AmqpInboundChannelAdapter;
-import org.springframework.integration.channel.DirectChannel;
 import org.springframework.integration.dsl.IntegrationFlow;
+import org.springframework.integration.kafka.inbound.KafkaMessageDrivenChannelAdapter;
 import org.springframework.integration.kafka.dsl.Kafka;
-import org.springframework.integration.mqtt.core.DefaultMqttPahoClientFactory;
-import org.springframework.integration.mqtt.core.MqttPahoClientFactory;
-import org.springframework.integration.mqtt.inbound.MqttPahoMessageDrivenChannelAdapter;
-import org.springframework.integration.mqtt.outbound.MqttPahoMessageHandler;
-import org.springframework.integration.mqtt.support.DefaultPahoMessageConverter;
-import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.core.ConsumerFactory;
+import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
+import org.springframework.kafka.listener.ConcurrentMessageListenerContainer;
+import org.springframework.kafka.listener.ContainerProperties;
+import org.springframework.kafka.support.Acknowledgment;
+import org.springframework.kafka.support.KafkaHeaders;
 import org.springframework.messaging.Message;
-import org.springframework.messaging.MessageChannel;
-import org.springframework.messaging.MessageHandler;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
+import java.util.Map;
 
-/**
- * Spring Integration 설정 클래스
- * - MQTT 발행 및 구독
- * - RabbitMQ 구독
- * - Kafka 전송
- */
 @Configuration
 public class IntegrationConfig {
 
-    // RabbitMQ 큐 이름 (application.yml에서 주입)
+    // === RabbitMQ 설정 값들 주입 ===
     @Value("${spring.rabbitmq.queue}")
-    private String rabbitQueue;
+    private String queue;
 
-    // MQTT 브로커 접속 URL (tcp://host:port)
-    @Value("${mqtt.broker-url}")
-    private String mqttBrokerUrl;
-
-    // MQTT 클라이언트 식별자
-    @Value("${mqtt.client-id}")
-    private String mqttClientId;
-
-    // MQTT 구독/발행 토픽
-    @Value("${mqtt.topic}")
-    private String mqttTopic;
-
-    // MQTT QoS 레벨 (0, 1, 2)
-    @Value("${mqtt.qos}")
-    private int mqttQos;
-
-    // Kafka 토픽 이름
+    // === Kafka 설정 값들 주입 ===
+    @Value("${spring.kafka.bootstrap-servers}")
+    private String bootstrapServers;
+    @Value("${spring.kafka.consumer.group-id}")
+    private String groupId;
     @Value("${spring.kafka.topic}")
-    private String kafkaTopic;
+    private String topic;
 
-    // ==========================
-    // 1. MQTT 발행(Publish) 지원
-    // ==========================
 
-    /**
-     * MqttGateway가 메시지를 전송할 채널
-     */
-    @Bean
-    public MessageChannel mqttExecutorChannel() {
-        return new DirectChannel();
-    }
-
-    /**
-     * mqttExecutorChannel로 전달된 메시지를 실제 MQTT 브로커에 발행
-     */
-    @Bean
-    @ServiceActivator(inputChannel = "mqttExecutorChannel")
-    public MessageHandler mqttPahoMessageHandler(MqttPahoClientFactory factory) {
-        MqttPahoMessageHandler handler =
-                new MqttPahoMessageHandler(mqttClientId + "-outbound", factory);
-        handler.setAsync(true);  // 비동기 전송
-        handler.setConverter(new DefaultPahoMessageConverter());  // 페이로드 변환
-        handler.setDefaultQos(mqttQos);  // QoS 설정
-        return handler;
-    }
-
-    /**
-     * 코드에서 mqttExecutorChannel로 메시지를 보낼 수 있도록 해주는 Gateway
-     */
-    @MessagingGateway(defaultRequestChannel = "mqttExecutorChannel")
-    public interface MqttGateway {
-        void sendToMqtt(Message<String> msg);
-    }
-
-    // ==================================
-    // 2. MQTT 구독(Subscribe) 후 Kafka 전송
-    // ==================================
-
-    /**
-     * Paho MQTT 클라이언트 팩토리 설정
-     */
-    @Bean
-    public MqttPahoClientFactory mqttClientFactory() {
-        DefaultMqttPahoClientFactory factory = new DefaultMqttPahoClientFactory();
-        MqttConnectOptions options = new MqttConnectOptions();
-        options.setServerURIs(new String[]{mqttBrokerUrl});  // 브로커 주소
-        options.setCleanSession(true);  // 세션 유지
-        options.setAutomaticReconnect(true);  // 자동 재연결
-        options.setConnectionTimeout(60);  // 연결 타임아웃
-        options.setKeepAliveInterval(60);
-        factory.setConnectionOptions(options);
-        return factory;
-    }
-
-    /**
-     * MQTT 수신 후 메시지를 전달할 채널
-     */
-    @Bean
-    public MessageChannel mqttInputChannel() {
-        return new DirectChannel();
-    }
-
-    /**
-     * MQTT 토픽을 구독하고, 수신된 메시지를 Kafka로 전송하는 Flow
-     */
-//    @Bean
-//    public IntegrationFlow mqttInboundFlow(
-//            MqttPahoClientFactory clientFactory,
-//            MqttToKafkaService mqttToKafkaService
-//    ) {
-//        DefaultPahoMessageConverter converter = new DefaultPahoMessageConverter();
-//        converter.setPayloadAsBytes(true);
-//
-//        MqttPahoMessageDrivenChannelAdapter adapter =
-//                new MqttPahoMessageDrivenChannelAdapter(
-//                        mqttClientId + "-inbound", clientFactory, mqttTopic
-//                );
-//        adapter.setConverter(new DefaultPahoMessageConverter());  // 페이로드 변환
-//        adapter.setQos(mqttQos);  // QoS 설정
-//        adapter.setCompletionTimeout(60000);
-//
-//        return IntegrationFlow.from(adapter)
-//                // 2. 람다의 payload 타입을 byte[] 로 명시
-//                .<String>handle((payload, headers) -> {
-//                    mqttToKafkaService.onMqttReceived(payload.getBytes(StandardCharsets.UTF_8).length);
-////                    mqttToKafkaService.handleFromMqtt(payload);
-//                    return null;
-//                })
-//                .get();
-//    }
-
-    // =====================================
-    // 3. RabbitMQ 구독(Subscribe) 후 Kafka 전송
-    // =====================================
-
-    /**
-     * RabbitMQ 수신 후 메시지를 전달할 채널
-     */
-    @Bean
-    public MessageChannel rabbitInputChannel() {
-        return new DirectChannel();
-    }
-
-    /**
-     * RabbitMQ 큐를 소비하고, 메시지를 Kafka로 전송하는 Flow
-     * - byte[] 페이로드를 String으로 변환 후 전송
-     */
+    // ------------------------------------------------------------
+    // 1) RabbitMQ → Kafka 통합 Flow
+    //    - SimpleMessageListenerContainer 로 RabbitMQ에서 메시지를 수동 ACK 모드로 소비
+    //    - Spring Integration 의 AmqpInboundChannelAdapter 를 통해 IntegrationFlow 시작
+    //    - 메트릭 집계 및 Kafka 전송 후 수동으로 basicAck 수행
+    // ------------------------------------------------------------
     @Bean
     public IntegrationFlow rabbitToKafkaFlow(
             ConnectionFactory connectionFactory,
-            KafkaTemplate<String, String> kafkaTemplate,
             MqttToKafkaService mqttToKafkaService
     ) {
+        // 1.1) 리스너 컨테이너 설정: 경쟁 소비자 8개, prefetch 625, MANUAL ACK
         SimpleMessageListenerContainer container =
                 new SimpleMessageListenerContainer(connectionFactory);
-        container.setQueueNames(rabbitQueue);  // 큐 이름
-        container.setConcurrentConsumers(8);  // 동시 소비 스레드 수
-        container.setPrefetchCount(1000);  // prefetch 수
-        container.setAcknowledgeMode(AcknowledgeMode.AUTO);
+        container.setQueueNames(queue);
+        container.setConcurrentConsumers(8);
+        container.setPrefetchCount(625);
+        container.setAcknowledgeMode(AcknowledgeMode.MANUAL);
 
+        // 1.2) AMQP Inbound Adapter 생성
         AmqpInboundChannelAdapter adapter = new AmqpInboundChannelAdapter(container);
-        adapter.setOutputChannel(rabbitInputChannel());  // 채널 연결
 
+        // 1.3) Integration Flow 정의
         return IntegrationFlow.from(adapter)
-                .handle(byte[].class, (body, headers) -> {
+                .handle(Message.class, (payloadMessage, headers) -> {
+                    // 1.3.1) 바디를 byte[] 로 가져오기
+                    byte[] body = (byte[]) payloadMessage.getPayload();
+
+                    // 1.3.2) RabbitMQ 수신 메트릭 집계
                     mqttToKafkaService.onRabbitReceived(body.length);
+
+                    // 1.3.3) Kafka 전송
                     mqttToKafkaService.handleFromRabbit(body);
+
+                    // 1.3.4) 수동 ACK: RabbitMQ 채널과 deliveryTag 헤더에서 꺼내 basicAck 호출
+                    Channel channel = (Channel) headers.get(AmqpHeaders.CHANNEL);
+                    long deliveryTag = (long) headers.get(AmqpHeaders.DELIVERY_TAG);
+                    try {
+                        channel.basicAck(deliveryTag, false);
+                    } catch (IOException e) {
+                        throw new RuntimeException("Failed to ack RabbitMQ message", e);
+                    }
+
+                    // 1.3.5) Flow 종료: 반환값 없음(null)
                     return null;
                 })
                 .get();
     }
+
+
+    // ------------------------------------------------------------
+    // 2) Kafka ConsumerFactory 빈 정의
+    //    - Manual commit, batch size, fetch size 등 최적화
+    // ------------------------------------------------------------
+    @Bean
+    public ConsumerFactory<String, String> kafkaConsumerFactory() {
+        Map<String, Object> props = new HashMap<>();
+        // 클러스터 주소
+        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
+        // Consumer 그룹
+        props.put(ConsumerConfig.GROUP_ID_CONFIG, groupId);
+        // 직렬화 클래스 지정
+        props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
+        props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
+        // 최대 polling 레코드 수
+        props.put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, 1000);
+        // 최소/최대 fetch 바이트
+        props.put(ConsumerConfig.FETCH_MIN_BYTES_CONFIG, 16 * 1024);
+        props.put(ConsumerConfig.FETCH_MAX_BYTES_CONFIG, 1024 * 1024);
+        // 자동 커밋 끄기 → 수동 즉시 커밋 모드
+        props.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false);
+        // 오프셋 리셋 정책
+        props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+
+        return new DefaultKafkaConsumerFactory<>(props);
+    }
+
+    // ------------------------------------------------------------
+    // 3) Kafka Listener Container 설정
+    //    - 병렬 컨슈머 8개, 수동 즉시 ACK 모드
+    // ------------------------------------------------------------
+    @Bean
+    public ConcurrentMessageListenerContainer<String, String> kafkaListenerContainerFactory(
+            ConsumerFactory<String, String> consumerFactory
+    ) {
+        // Kafka 토픽 구독 설정
+        ContainerProperties containerProps = new ContainerProperties(topic);
+        // 레코드 단위로 ACK
+        containerProps.setAckMode(ContainerProperties.AckMode.MANUAL_IMMEDIATE);
+
+        ConcurrentMessageListenerContainer<String, String> container =
+                new ConcurrentMessageListenerContainer<>(consumerFactory, containerProps);
+        // 병렬 처리 쓰레드 수
+        container.setConcurrency(8);
+        return container;
+    }
+
+    // ------------------------------------------------------------
+    // 4) Kafka → 메트릭 집계 Flow
+    //    - 메시지 수신 시 메트릭 카운터 증가 및 수동 ACK
+    // ------------------------------------------------------------
+    @Bean
+    public IntegrationFlow kafkaInboundFlow(
+            ConcurrentMessageListenerContainer<String, String> container,
+            MqttToKafkaService mqttToKafkaService
+    ) {
+        return IntegrationFlow
+                // 4.1) Spring Integration kafka 어댑터: batch 모드
+                .from(Kafka.messageDrivenChannelAdapter(
+                        container,
+                        KafkaMessageDrivenChannelAdapter.ListenerMode.batch
+                ))
+                // 4.2) 배치 단위로 수신된 List<Message> 를 개별 메시지로 split
+                .split()
+                .handle(Message.class, (message, headers) -> {
+                    // 4.3) 페이로드를 String 으로 변환
+                    String payload = (String) message.getPayload();
+                    int length = payload.getBytes(StandardCharsets.UTF_8).length;
+
+                    // 4.4) Kafka 수신 메트릭 집계
+                    mqttToKafkaService.onKafkaReceived(length);
+
+                    // 4.5) 수동 ACK 호출
+                    Acknowledgment ack = headers.get(KafkaHeaders.ACKNOWLEDGMENT, Acknowledgment.class);
+                    if (ack != null) {
+                        ack.acknowledge();
+                    }
+
+                    return null;
+                })
+                .get();
+    }
+
 }
