@@ -1,6 +1,6 @@
 package com.example.integration.config;
 
-import com.example.integration.service.MqttToKafkaService;
+import com.example.integration.service.MetricsService;
 import com.rabbitmq.client.Channel;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.serialization.StringDeserializer;
@@ -53,7 +53,7 @@ public class IntegrationConfig {
     @Bean
     public IntegrationFlow rabbitToKafkaFlow(
             ConnectionFactory connectionFactory,
-            MqttToKafkaService mqttToKafkaService
+            MetricsService metricsService
     ) {
         // 1.1) 리스너 컨테이너 설정: 경쟁 소비자 8개, prefetch 625, MANUAL ACK
         SimpleMessageListenerContainer container =
@@ -73,10 +73,10 @@ public class IntegrationConfig {
                     byte[] body = (byte[]) payloadMessage.getPayload();
 
                     // 1.3.2) RabbitMQ 수신 메트릭 집계
-                    mqttToKafkaService.onRabbitReceived(body.length);
+                    metricsService.onRabbitReceived(body.length);
 
                     // 1.3.3) Kafka 전송
-                    mqttToKafkaService.handleFromRabbit(body);
+                    metricsService.handleFromRabbit(body);
 
                     // 1.3.4) 수동 ACK: RabbitMQ 채널과 deliveryTag 헤더에서 꺼내 basicAck 호출
                     Channel channel = (Channel) headers.get(AmqpHeaders.CHANNEL);
@@ -147,7 +147,7 @@ public class IntegrationConfig {
     @Bean
     public IntegrationFlow kafkaInboundFlow(
             ConcurrentMessageListenerContainer<String, String> container,
-            MqttToKafkaService mqttToKafkaService
+            MetricsService metricsService
     ) {
         return IntegrationFlow
                 // 4.1) Spring Integration kafka 어댑터: batch 모드
@@ -163,7 +163,7 @@ public class IntegrationConfig {
                     int length = payload.getBytes(StandardCharsets.UTF_8).length;
 
                     // 4.4) Kafka 수신 메트릭 집계
-                    mqttToKafkaService.onKafkaReceived(length);
+                    metricsService.onKafkaReceived(length);
 
                     // 4.5) 수동 ACK 호출
                     Acknowledgment ack = headers.get(KafkaHeaders.ACKNOWLEDGMENT, Acknowledgment.class);

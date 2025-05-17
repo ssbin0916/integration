@@ -1,6 +1,6 @@
 package com.example.integration.controller;
 
-import com.example.integration.service.MqttToKafkaService;
+import com.example.integration.service.MetricsService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -13,10 +13,10 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class MetricsController {
 
-    private final MqttToKafkaService mqttToKafkaService;
-    // 기존 메트릭과 별개로, 실시간 처리량만 뽑아주는 엔드포인트
+    private final MetricsService metricsService;
+
     @GetMapping
     public Map<String, Object> realtime() {
-        return mqttToKafkaService.getRealtimeMetrics();
+        return metricsService.getRealtimeMetrics();
     }
 }

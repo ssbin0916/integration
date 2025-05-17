@@ -14,7 +14,7 @@ import java.util.concurrent.atomic.AtomicLong;
 
 @Service
 @RequiredArgsConstructor
-public class MqttToKafkaService {
+public class MetricsService {
 
     private final KafkaTemplate<String, String> kafkaTemplate;
 
