@@ -93,7 +93,6 @@ public class IntegrationConfig {
                 .get();
     }
 
-
     // ------------------------------------------------------------
     // 2) Kafka ConsumerFactory 빈 정의
     //    - Manual commit, batch size, fetch size 등 최적화
