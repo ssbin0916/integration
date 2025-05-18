@@ -84,9 +84,12 @@ public class IntegrationConfig {
                     try {
                         channel.basicAck(deliveryTag, false);
                     } catch (IOException e) {
-                        throw new RuntimeException("Failed to ack RabbitMQ message", e);
+                        try {
+                            channel.basicNack(deliveryTag, false, true);
+                        } catch (IOException ex) {
+                            throw new RuntimeException(ex);
+                        }
                     }
-
                     // 1.3.5) Flow 종료: 반환값 없음(null)
                     return null;
                 })
