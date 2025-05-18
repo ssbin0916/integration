@@ -2,6 +2,7 @@ package com.example.integration.config;
 
 import com.example.integration.service.MetricsService;
 import com.rabbitmq.client.Channel;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.springframework.amqp.core.AcknowledgeMode;
@@ -28,6 +29,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 
+@Slf4j
 @Configuration
 public class IntegrationConfig {
 
@@ -43,6 +45,12 @@ public class IntegrationConfig {
     @Value("${spring.kafka.topic}")
     private String topic;
 
+    private final MetricsService metricsService;
+
+    public IntegrationConfig(MetricsService metricsService) {
+        this.metricsService = metricsService;
+    }
+
 
     // ------------------------------------------------------------
     // 1) RabbitMQ → Kafka 통합 Flow
@@ -50,12 +58,58 @@ public class IntegrationConfig {
     //    - Spring Integration 의 AmqpInboundChannelAdapter 를 통해 IntegrationFlow 시작
     //    - 메트릭 집계 및 Kafka 전송 후 수동으로 basicAck 수행
     // ------------------------------------------------------------
+//    @Bean
+//    public IntegrationFlow rabbitToKafkaFlow(
+//            ConnectionFactory connectionFactory,
+//            MetricsService metricsService
+//    ) {
+//        AtomicInteger count = new AtomicInteger();
+//        // 1.1) 리스너 컨테이너 설정: 경쟁 소비자 8개, prefetch 625, MANUAL ACK
+//        SimpleMessageListenerContainer container =
+//                new SimpleMessageListenerContainer(connectionFactory);
+//        container.setQueueNames(queue);
+//        container.setConcurrentConsumers(8);
+//        container.setPrefetchCount(625);
+//        container.setAcknowledgeMode(AcknowledgeMode.MANUAL);
+//
+//        // 1.2) AMQP Inbound Adapter 생성
+//        AmqpInboundChannelAdapter adapter = new AmqpInboundChannelAdapter(container);
+//
+//        // 1.3) Integration Flow 정의
+//        return IntegrationFlow.from(adapter)
+//                .handle(Message.class, (payloadMessage, headers) -> {
+//                    // 1.3.1) 바디를 byte[] 로 가져오기
+//                    byte[] body = (byte[]) payloadMessage.getPayload();
+//
+//                    // 1.3.2) RabbitMQ 수신 메트릭 집계
+//                    metricsService.onRabbitReceived(body.length);
+//
+//                    // 1.3.3) Kafka 전송
+//                    metricsService.handleFromRabbit(body);
+//
+//                    // 1.3.4) 수동 ACK: RabbitMQ 채널과 deliveryTag 헤더에서 꺼내 basicAck 호출
+//                    Channel channel = (Channel) headers.get(AmqpHeaders.CHANNEL);
+//                    long deliveryTag = (long) headers.get(AmqpHeaders.DELIVERY_TAG);
+//                    try {
+//                        channel.basicAck(deliveryTag, false);
+//                    } catch (IOException e) {
+//                        try {
+//                            log.error("failed to ack message: {}", deliveryTag, e);
+//                            channel.basicNack(deliveryTag, false, true);
+//                        } catch (IOException ex) {
+//                            throw new RuntimeException(ex);
+//                        }
+//                    }
+//                    // 1.3.5) Flow 종료: 반환값 없음(null)
+//                    return null;
+//                })
+//                .get();
+//    }
+
     @Bean
     public IntegrationFlow rabbitToKafkaFlow(
-            ConnectionFactory connectionFactory,
-            MetricsService metricsService
+            ConnectionFactory connectionFactory
     ) {
-        // 1.1) 리스너 컨테이너 설정: 경쟁 소비자 8개, prefetch 625, MANUAL ACK
         SimpleMessageListenerContainer container =
                 new SimpleMessageListenerContainer(connectionFactory);
         container.setQueueNames(queue);
@@ -63,37 +117,31 @@ public class IntegrationConfig {
         container.setPrefetchCount(625);
         container.setAcknowledgeMode(AcknowledgeMode.MANUAL);
 
-        // 1.2) AMQP Inbound Adapter 생성
-        AmqpInboundChannelAdapter adapter = new AmqpInboundChannelAdapter(container);
-
         // 1.3) Integration Flow 정의
-        return IntegrationFlow.from(adapter)
-                .handle(Message.class, (payloadMessage, headers) -> {
-                    // 1.3.1) 바디를 byte[] 로 가져오기
-                    byte[] body = (byte[]) payloadMessage.getPayload();
-
-                    // 1.3.2) RabbitMQ 수신 메트릭 집계
-                    metricsService.onRabbitReceived(body.length);
-
-                    // 1.3.3) Kafka 전송
-                    metricsService.handleFromRabbit(body);
-
-                    // 1.3.4) 수동 ACK: RabbitMQ 채널과 deliveryTag 헤더에서 꺼내 basicAck 호출
-                    Channel channel = (Channel) headers.get(AmqpHeaders.CHANNEL);
-                    long deliveryTag = (long) headers.get(AmqpHeaders.DELIVERY_TAG);
-                    try {
-                        channel.basicAck(deliveryTag, false);
-                    } catch (IOException e) {
-                        try {
-                            channel.basicNack(deliveryTag, false, true);
-                        } catch (IOException ex) {
-                            throw new RuntimeException(ex);
-                        }
-                    }
-                    // 1.3.5) Flow 종료: 반환값 없음(null)
+        return IntegrationFlow.from(new AmqpInboundChannelAdapter(container))
+                .handle(Message.class, (message, headers) -> {
+                    byte[] body = (byte[]) message.getPayload();
+                    Channel channel = headers.get(AmqpHeaders.CHANNEL, Channel.class);
+                    long tag = headers.get(AmqpHeaders.DELIVERY_TAG, Long.class);
+                    handle(body, channel, tag);
                     return null;
                 })
                 .get();
+    }
+
+    private void handle(byte[] body, Channel channel, long deliveryTag) {
+        metricsService.onRabbitReceived(body.length);
+        metricsService.handleFromRabbit(body);
+        try {
+            channel.basicAck(deliveryTag, false);
+        } catch (IOException e) {
+            try {
+                log.error("failed to ack message: {}", deliveryTag, e);
+                channel.basicNack(deliveryTag, false, true);
+            } catch (IOException ex) {
+                throw new RuntimeException("Nack 실패", ex);
+            }
+        }
     }
 
     // ------------------------------------------------------------
